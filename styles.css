@@ -52,7 +52,7 @@ button {
     auto
     minmax(0, 1fr)
     22px
-    62px
+    104px
     66px;
   gap: 7px;
   padding:
@@ -212,9 +212,22 @@ button {
 }
 
 .page-nav {
+  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 58px minmax(0, 1fr);
+  grid-template-rows: 1fr 40px;
+  gap: 7px;
+}
+
+.page-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
+  min-height: 0;
+}
+
+.loop-row {
+  display: grid;
+  place-items: center;
   min-height: 0;
 }
 
@@ -239,18 +252,18 @@ button {
 }
 
 .drive-loop-btn {
-  width: 58px;
-  height: 100%;
-  min-width: 58px;
-  padding: 5px 2px;
+  width: min(26vw, 118px);
+  min-width: 86px;
+  height: 40px;
+  padding: 4px 12px;
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: 15px;
   background: var(--panel-3);
   color: var(--text);
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   box-shadow:
     0 4px 10px rgba(0,0,0,.28),
     inset 0 1px 0 rgba(255,255,255,.06);
@@ -343,14 +356,13 @@ button {
 /* Slight squeeze for shorter displays */
 @media (max-height: 780px) {
   .drive-view {
-    grid-template-rows: auto minmax(0,1fr) 18px 54px 58px;
+    grid-template-rows: auto minmax(0,1fr) 18px 92px 58px;
     gap: 5px;
   }
 
   .drive-header { min-height: 52px; }
   .square-btn { width: 42px; height: 42px; flex-basis: 42px; }
-  .page-nav { grid-template-columns: minmax(0, 1fr) 52px minmax(0, 1fr); }
-  .drive-loop-btn { width: 52px; min-width: 52px; border-radius: 16px; }
+  .drive-loop-btn { width: min(28vw, 108px); min-width: 82px; height: 36px; border-radius: 14px; }
   .sound-grid { gap: 6px; }
   .sound-pad { border-radius: 18px; }
   .pad-meta { bottom: 6px; }

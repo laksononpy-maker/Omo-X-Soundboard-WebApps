@@ -1,4 +1,4 @@
-# OMO X Soundboard — v1.0 alpha.1
+# OMO X Soundboard — v1.0 alpha.2
 
 A local-first PWA soundboard designed for portrait iPhone use.
 
@@ -74,3 +74,9 @@ Sounds imported on a Mac do not automatically sync to the iPhone.
 - The LOOP button controls the currently playing sound and persists that sound's loop setting.
 - LOOP is disabled when nothing is playing.
 - Updating the app at the same GitHub Pages URL does not intentionally clear IndexedDB audio.
+
+## v1.0 alpha.2 navigation layout fix
+- PREV and NEXT now always occupy the first row, 50/50.
+- LOOP is centered on its own second row underneath.
+- Prevents mobile wrapping into [PREV][LOOP] / [NEXT].
+- No IndexedDB schema changes; existing imported sounds should remain intact after updating at the same URL.
