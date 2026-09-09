@@ -1,4 +1,4 @@
-# OMO X Soundboard — v1.0 alpha.4.1
+# OMO X Soundboard — v1.0 alpha.5
 
 A local-first PWA soundboard designed for portrait iPhone use.
 
@@ -105,3 +105,20 @@ Sounds imported on a Mac do not automatically sync to the iPhone.
 - Import appends the new sound ID to the order registry.
 - Delete removes the sound ID from the order registry.
 - Existing audio, trims, names, loop settings and IndexedDB schema remain untouched.
+
+
+## v1.0 alpha.5 — iOS Blob stability rebuild
+This release changes the internal architecture to avoid Safari/iOS IndexedDB Blob instability after metadata operations.
+
+### Key changes
+- Imported audio/video Blob is written to IndexedDB exactly ONCE at import.
+- Reorder writes only a tiny ID array to localStorage.
+- Rename, trim and loop settings write only lightweight metadata to localStorage.
+- Playback fetches a FRESH Blob record from IndexedDB by sound ID on every tap.
+- Editing fetches a fresh Blob record only when the editor is opened.
+- The normal in-memory sound list contains metadata only — no long-lived Blob references.
+- Existing alpha sounds are migrated non-destructively: metadata is copied out once; audio is not rewritten.
+- Database schema stays v1; no destructive IndexedDB migration is performed.
+
+This specifically targets symptoms where reorder/edit operations could be delayed for 60–120 seconds
+or make previously valid audio suddenly report unreadable/unsupported until the PWA was restarted.

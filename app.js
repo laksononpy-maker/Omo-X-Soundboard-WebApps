@@ -1,10 +1,11 @@
-const APP_VERSION = "1.0-alpha.4.1";
+const APP_VERSION = "1.0-alpha.5";
 const PAGE_SIZE = 6;
 
 const DB_NAME = "omo-x-soundboard";
 const DB_VERSION = 1;
 const STORE = "sounds";
 const ORDER_KEY = "omo-x-soundboard-order-v1";
+const META_KEY = "omo-x-soundboard-meta-v2";
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -87,6 +88,24 @@ function getAllSounds() {
   });
 }
 
+function getAllSoundIds() {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readonly");
+    const request = tx.objectStore(STORE).getAllKeys();
+    request.onsuccess = () => resolve((request.result || []).map(String));
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function getSoundRecord(id) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readonly");
+    const request = tx.objectStore(STORE).get(id);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
 function putSound(sound) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, "readwrite");
@@ -112,6 +131,87 @@ function deleteSound(id) {
    Helpers
    ========================= */
 
+function readMetaMap() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(META_KEY) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeMetaMap(map) {
+  try {
+    localStorage.setItem(META_KEY, JSON.stringify(map));
+  } catch (error) {
+    console.warn("Could not persist sound metadata:", error);
+  }
+}
+
+function metadataFromRecord(record) {
+  return {
+    id: String(record.id),
+    name: record.name || record.fileName || "Untitled Sound",
+    fileName: record.fileName || "",
+    mime: record.mime || record.blob?.type || "",
+    duration: Number(record.duration) || 0,
+    trimStart: Number.isFinite(record.trimStart) ? record.trimStart : 0,
+    trimEnd: Number.isFinite(record.trimEnd) ? record.trimEnd : (Number(record.duration) || 0),
+    loop: !!record.loop,
+    createdAt: Number(record.createdAt) || Date.now()
+  };
+}
+
+function replaceSoundMeta(meta) {
+  const map = readMetaMap();
+  map[meta.id] = meta;
+  writeMetaMap(map);
+
+  const index = sounds.findIndex((sound) => sound.id === meta.id);
+  if (index >= 0) sounds[index] = meta;
+  else sounds.push(meta);
+}
+
+function removeSoundMeta(id) {
+  const map = readMetaMap();
+  delete map[id];
+  writeMetaMap(map);
+  sounds = sounds.filter((sound) => sound.id !== id);
+}
+
+async function loadMetadataOnly() {
+  const ids = await getAllSoundIds();
+  const known = new Set(ids);
+  const map = readMetaMap();
+  let changed = false;
+
+  // Remove orphaned metadata.
+  for (const id of Object.keys(map)) {
+    if (!known.has(id)) {
+      delete map[id];
+      changed = true;
+    }
+  }
+
+  // One-time migration for sounds created by previous alpha builds.
+  // Reads each legacy record only if metadata has not yet been separated.
+  for (const id of ids) {
+    if (!map[id]) {
+      const record = await getSoundRecord(id);
+      if (record) {
+        map[id] = metadataFromRecord(record);
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) writeMetaMap(map);
+
+  return ids
+    .map((id) => map[id])
+    .filter(Boolean);
+}
+
 function readOrderIds() {
   try {
     const parsed = JSON.parse(localStorage.getItem(ORDER_KEY) || "[]");
@@ -130,11 +230,7 @@ function writeOrderIds(ids) {
 }
 
 function legacySortedSounds() {
-  return [...sounds].sort((a, b) => {
-    const ao = Number.isFinite(a.order) ? a.order : (a.createdAt ?? 0);
-    const bo = Number.isFinite(b.order) ? b.order : (b.createdAt ?? 0);
-    return ao - bo;
-  });
+  return [...sounds].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
 }
 
 function reconcileOrderIds() {
@@ -372,11 +468,7 @@ function moveSound(soundId, direction) {
 
   [ids[index], ids[target]] = [ids[target], ids[index]];
 
-  /*
-    IMPORTANT:
-    Reordering writes ONLY this tiny ID array to localStorage.
-    It does not rewrite any audio Blob in IndexedDB.
-  */
+  // Reorder is metadata-only and synchronous. Zero Blob/IndexedDB writes.
   writeOrderIds(ids);
 
   renderManage();
@@ -465,9 +557,25 @@ async function playSound(sound) {
   stopCurrent();
   stopPreview();
 
-  const media = makeMedia(sound.blob, sound.fileName);
+  let record;
+  try {
+    record = await getSoundRecord(sound.id);
+  } catch (error) {
+    console.error("Could not read sound record:", error);
+    showToast("Could not read this sound from local storage.");
+    return;
+  }
+
+  const blob = record?.blob;
+  if (!blob || typeof blob.size !== "number") {
+    showToast("Audio data is missing. Re-import this sound.");
+    return;
+  }
+
+  const media = makeMedia(blob, sound.fileName);
   const start = sound.trimStart ?? 0;
   const end = sound.trimEnd ?? sound.duration;
+
   currentPlayback = {
     id: sound.id,
     media,
@@ -505,7 +613,8 @@ async function playSound(sound) {
   });
 
   media.addEventListener("error", () => {
-    showToast("Playback failed — this codec may not be supported.");
+    console.error("Media element error:", media.error);
+    showToast("Playback failed. Local media could not be decoded.");
     finish();
   }, { once: true });
 
@@ -514,7 +623,8 @@ async function playSound(sound) {
     await media.play();
     setMediaSession(sound);
     renderDrive();
-  } catch {
+  } catch (error) {
+    console.error("Playback start failed:", error);
     showToast("Could not start playback.");
     finish();
   }
@@ -532,15 +642,12 @@ async function toggleDriveLoop() {
   currentPlayback.loop = !currentPlayback.loop;
   sound.loop = currentPlayback.loop;
 
-  try {
-    await putSound(sound);
-    sounds = await getAllSounds();
-    renderDrive();
-    renderManage();
-    showToast(currentPlayback.loop ? "Loop ON." : "Loop OFF.");
-  } catch {
-    showToast("Could not save loop setting.");
-  }
+  // Metadata-only write: never touches the audio Blob in IndexedDB.
+  replaceSoundMeta({ ...sound });
+
+  renderDrive();
+  renderManage();
+  showToast(currentPlayback.loop ? "Loop ON." : "Loop OFF.");
 }
 
 /* =========================
@@ -724,16 +831,30 @@ async function prepareEditorFromFile(file, queueLabel) {
 async function openExistingEditor(sound) {
   stopPreview();
 
+  let record;
+  try {
+    record = await getSoundRecord(sound.id);
+  } catch (error) {
+    console.error("Could not read sound for editor:", error);
+    showToast("Could not read this sound from local storage.");
+    return;
+  }
+
+  const blob = record?.blob;
+  if (!blob || typeof blob.size !== "number") {
+    showToast("Audio data is missing. Re-import this sound.");
+    return;
+  }
+
   editorState = {
     mode: "edit",
     id: sound.id,
-    blob: sound.blob,
+    blob,
     fileName: sound.fileName,
     mime: sound.mime,
     duration: sound.duration,
     loop: !!sound.loop,
     createdAt: sound.createdAt,
-    order: sound.order,
     waveBuffer: null
   };
 
@@ -753,11 +874,11 @@ async function openExistingEditor(sound) {
   deleteBtn.hidden = false;
 
   formatNote.textContent =
-    `${sound.fileName} • ${sound.mime || "unknown MIME"} • stored locally in this PWA.`;
+    `${sound.fileName} • ${sound.mime || "unknown MIME"} • audio is stored locally; edits are metadata-only.`;
 
   syncTrimUi();
   editorDialog.showModal();
-  await showWaveform(sound.blob);
+  await showWaveform(blob);
 }
 
 async function previewEditor() {
@@ -828,26 +949,39 @@ async function saveEditor() {
   }
 
   const now = Date.now();
+  const isEdit = editorState.mode === "edit";
+  const id = isEdit ? editorState.id : crypto.randomUUID();
 
-  const record = {
-    id: editorState.mode === "edit" ? editorState.id : crypto.randomUUID(),
+  const meta = {
+    id,
     name,
     fileName: editorState.fileName,
     mime: editorState.mime,
-    blob: editorState.blob,
     duration: editorState.duration,
     trimStart: start,
     trimEnd: end,
     loop: !!editorState.loop,
-    createdAt: editorState.createdAt ?? now,
-    order: editorState.order ?? now
+    createdAt: editorState.createdAt ?? now
   };
 
-  await putSound(record);
-  sounds = await getAllSounds();
+  if (isEdit) {
+    // Existing audio is immutable. Rename/trim/loop only touch local metadata.
+    replaceSoundMeta(meta);
+  } else {
+    // Import writes the Blob exactly once.
+    const record = {
+      ...meta,
+      blob: editorState.blob
+    };
 
-  // New imports are appended to the lightweight order registry.
-  reconcileOrderIds();
+    await putSound(record);
+    replaceSoundMeta(meta);
+
+    // Append new sound to the lightweight order registry.
+    const ids = readOrderIds().filter((existingId) => existingId !== id);
+    ids.push(id);
+    writeOrderIds(ids);
+  }
 
   renderManage();
   renderDrive();
@@ -855,16 +989,14 @@ async function saveEditor() {
   stopPreview();
   editorDialog.close();
 
-  const wasImport = editorState.mode === "import";
-
-  if (wasImport && importIndex < importQueue.length - 1) {
+  if (!isEdit && importIndex < importQueue.length - 1) {
     importIndex += 1;
     await openImportAtIndex();
   } else {
     importQueue = [];
     importIndex = 0;
     editorState = null;
-    showToast("Saved locally.");
+    showToast(isEdit ? "Changes saved." : "Saved locally.");
   }
 }
 
@@ -878,9 +1010,16 @@ async function removeCurrentEditorSound() {
   if (currentPlayback?.id === editorState.id) stopCurrent();
 
   const deletedId = editorState.id;
-  await deleteSound(deletedId);
-  sounds = await getAllSounds();
 
+  try {
+    await deleteSound(deletedId);
+  } catch (error) {
+    console.error("Delete failed:", error);
+    showToast("Could not delete this sound.");
+    return;
+  }
+
+  removeSoundMeta(deletedId);
   writeOrderIds(readOrderIds().filter((id) => id !== deletedId));
   reconcileOrderIds();
 
@@ -1073,12 +1212,14 @@ document.addEventListener("visibilitychange", syncWakeLock);
 
 async function init() {
   db = await openDb();
-  sounds = await getAllSounds();
 
   /*
-    Build/reconcile a lightweight ID-only order registry.
-    This migrates the visible order without rewriting audio Blobs.
+    v1.0 alpha.5:
+    Keep audio Blobs immutable in IndexedDB.
+    The in-memory sound list is metadata-only.
+    Fresh Blob records are fetched only when playing or editing.
   */
+  sounds = await loadMetadataOnly();
   reconcileOrderIds();
 
   renderDrive();
