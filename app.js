@@ -1,4 +1,4 @@
-const APP_VERSION = "1.0-alpha.0";
+const APP_VERSION = "1.0-alpha.1";
 const PAGE_SIZE = 6;
 
 const DB_NAME = "omo-x-soundboard";
@@ -15,6 +15,8 @@ const soundCount = $("#soundCount");
 const pageLabel = $("#pageLabel");
 const prevPageBtn = $("#prevPageBtn");
 const nextPageBtn = $("#nextPageBtn");
+const driveLoopBtn = $("#driveLoopBtn");
+const driveLoopState = $("#driveLoopState");
 const stopAllBtn = $("#stopAllBtn");
 const manageBtn = $("#manageBtn");
 const backDriveBtn = $("#backDriveBtn");
@@ -220,6 +222,12 @@ function renderDrive() {
   prevPageBtn.disabled = currentPage === 0;
   nextPageBtn.disabled = currentPage >= totalPages - 1;
 
+  const hasCurrent = !!currentPlayback;
+  driveLoopBtn.disabled = !hasCurrent;
+  driveLoopBtn.classList.toggle("on", !!currentPlayback?.loop);
+  driveLoopBtn.setAttribute("aria-pressed", String(!!currentPlayback?.loop));
+  driveLoopState.textContent = hasCurrent ? (currentPlayback.loop ? "ON" : "OFF") : "—";
+
   for (const sound of pageSounds) {
     const btn = document.createElement("button");
     btn.type = "button";
@@ -351,11 +359,14 @@ function stopPreview() {
 }
 
 function installTrimGuard(media, start, end, shouldLoop, onFinish) {
+  const loopEnabled = () =>
+    typeof shouldLoop === "function" ? !!shouldLoop() : !!shouldLoop;
+
   const guard = () => {
     if (!media || media.paused) return;
 
     if (media.currentTime >= end - 0.025) {
-      if (shouldLoop) {
+      if (loopEnabled()) {
         media.currentTime = start;
         media.play().catch(() => {});
       } else {
@@ -408,12 +419,11 @@ async function playSound(sound) {
   const media = makeMedia(sound.blob, sound.fileName);
   const start = sound.trimStart ?? 0;
   const end = sound.trimEnd ?? sound.duration;
-  const shouldLoop = !!sound.loop;
-
   currentPlayback = {
     id: sound.id,
     media,
-    cleanup: null
+    cleanup: null,
+    loop: !!sound.loop
   };
 
   const finish = () => {
@@ -425,10 +435,19 @@ async function playSound(sound) {
     renderDrive();
   };
 
-  currentPlayback.cleanup = installTrimGuard(media, start, end, shouldLoop, finish);
+  currentPlayback.cleanup = installTrimGuard(
+    media,
+    start,
+    end,
+    () => !!currentPlayback && currentPlayback.media === media && currentPlayback.loop,
+    finish
+  );
 
   media.addEventListener("ended", () => {
-    if (shouldLoop) {
+    const shouldLoopNow =
+      !!currentPlayback && currentPlayback.media === media && currentPlayback.loop;
+
+    if (shouldLoopNow) {
       media.currentTime = start;
       media.play().catch(finish);
     } else {
@@ -449,6 +468,29 @@ async function playSound(sound) {
   } catch {
     showToast("Could not start playback.");
     finish();
+  }
+}
+
+async function toggleDriveLoop() {
+  if (!currentPlayback) {
+    showToast("Play a sound first.");
+    return;
+  }
+
+  const sound = sounds.find((item) => item.id === currentPlayback.id);
+  if (!sound) return;
+
+  currentPlayback.loop = !currentPlayback.loop;
+  sound.loop = currentPlayback.loop;
+
+  try {
+    await putSound(sound);
+    sounds = await getAllSounds();
+    renderDrive();
+    renderManage();
+    showToast(currentPlayback.loop ? "Loop ON." : "Loop OFF.");
+  } catch {
+    showToast("Could not save loop setting.");
   }
 }
 
@@ -912,6 +954,8 @@ nextPageBtn.addEventListener("click", () => {
     renderDrive();
   }
 });
+
+driveLoopBtn.addEventListener("click", toggleDriveLoop);
 
 stopAllBtn.addEventListener("click", () => {
   stopCurrent();

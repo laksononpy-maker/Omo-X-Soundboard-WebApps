@@ -1,11 +1,11 @@
-# OMO X Soundboard — v1.0 alpha
+# OMO X Soundboard — v1.0 alpha.1
 
 A local-first PWA soundboard designed for portrait iPhone use.
 
 ## Drive Mode
 - No scrolling.
 - 6 fixed large sound buttons per page (2 columns × 3 rows).
-- Large PREV and NEXT buttons, each taking half the width.
+- Large PREV and NEXT buttons with a compact live LOOP toggle between them.
 - Large STOP ALL button.
 - Tap a sound once to play; tap the same sound again to stop.
 - Starting another sound stops the current one.
@@ -67,3 +67,10 @@ After GitHub Pages finishes deploying:
 7. Add sounds from Manage mode on the iPhone itself.
 
 Sounds imported on a Mac do not automatically sync to the iPhone.
+
+## v1.0 alpha.1 tactile patch
+- Added strong press feedback (depress, dim, inset shadow) to Drive Mode controls.
+- Added a compact LOOP button between PREV and NEXT.
+- The LOOP button controls the currently playing sound and persists that sound's loop setting.
+- LOOP is disabled when nothing is playing.
+- Updating the app at the same GitHub Pages URL does not intentionally clear IndexedDB audio.
