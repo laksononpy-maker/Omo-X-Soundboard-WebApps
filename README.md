@@ -1,4 +1,4 @@
-# OMO X Soundboard — v1.0 alpha.3
+# OMO X Soundboard — v1.0 alpha.4.1
 
 A local-first PWA soundboard designed for portrait iPhone use.
 
@@ -88,3 +88,20 @@ Sounds imported on a Mac do not automatically sync to the iPhone.
 - Removed wrapper-based layout that could collapse/wrap incorrectly on iOS.
 - Added explicit min-width/min-height constraints and stacking separation from STOP ALL.
 - No IndexedDB schema change; existing local sounds remain intact at the same origin.
+
+## v1.0 alpha.4 reorder reliability fix
+- Rebuilt sound reordering around sound IDs instead of stale list indices.
+- All reordered records are now written atomically in ONE IndexedDB transaction.
+- Order values are normalized to 0..N-1, removing duplicate/tied legacy values.
+- Existing alpha sound order is normalized once on launch.
+- Added tactile press feedback to reorder/edit controls.
+- No database schema change and no audio/blob migration: existing local sounds, trims, names and loop settings are preserved.
+
+## v1.0 alpha.4.1 reorder latency hotfix
+- Reordering no longer writes sound records or audio Blobs to IndexedDB at all.
+- Button order is now stored as a tiny ID-only array in localStorage.
+- Move Up/Down is therefore immediate and synchronous from the UI perspective.
+- Existing v1.0 alpha.3/alpha.4 visible order is adopted automatically on first launch.
+- Import appends the new sound ID to the order registry.
+- Delete removes the sound ID from the order registry.
+- Existing audio, trims, names, loop settings and IndexedDB schema remain untouched.

@@ -1,9 +1,10 @@
-const APP_VERSION = "1.0-alpha.3";
+const APP_VERSION = "1.0-alpha.4.1";
 const PAGE_SIZE = 6;
 
 const DB_NAME = "omo-x-soundboard";
 const DB_VERSION = 1;
 const STORE = "sounds";
+const ORDER_KEY = "omo-x-soundboard-order-v1";
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -106,12 +107,56 @@ function deleteSound(id) {
   });
 }
 
+
 /* =========================
    Helpers
    ========================= */
 
+function readOrderIds() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ORDER_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeOrderIds(ids) {
+  try {
+    localStorage.setItem(ORDER_KEY, JSON.stringify(ids));
+  } catch (error) {
+    console.warn("Could not persist lightweight sound order:", error);
+  }
+}
+
+function legacySortedSounds() {
+  return [...sounds].sort((a, b) => {
+    const ao = Number.isFinite(a.order) ? a.order : (a.createdAt ?? 0);
+    const bo = Number.isFinite(b.order) ? b.order : (b.createdAt ?? 0);
+    return ao - bo;
+  });
+}
+
+function reconcileOrderIds() {
+  const knownIds = new Set(sounds.map((sound) => sound.id));
+  let ids = readOrderIds().filter((id) => knownIds.has(id));
+
+  const already = new Set(ids);
+  for (const sound of legacySortedSounds()) {
+    if (!already.has(sound.id)) {
+      ids.push(sound.id);
+      already.add(sound.id);
+    }
+  }
+
+  writeOrderIds(ids);
+  return ids;
+}
+
 function orderedSounds() {
-  return [...sounds].sort((a, b) => (a.order ?? a.createdAt) - (b.order ?? b.createdAt));
+  const ids = reconcileOrderIds();
+  const byId = new Map(sounds.map((sound) => [sound.id, sound]));
+  return ids.map((id) => byId.get(id)).filter(Boolean);
 }
 
 function pageCount() {
@@ -296,14 +341,14 @@ function renderManage() {
     up.textContent = "↑";
     up.title = "Move up";
     up.disabled = index === 0;
-    up.addEventListener("click", () => moveSound(index, -1));
+    up.addEventListener("click", () => moveSound(sound.id, -1));
 
     const down = document.createElement("button");
     down.type = "button";
     down.textContent = "↓";
     down.title = "Move down";
     down.disabled = index === ordered.length - 1;
-    down.addEventListener("click", () => moveSound(index, 1));
+    down.addEventListener("click", () => moveSound(sound.id, 1));
 
     const edit = document.createElement("button");
     edit.type = "button";
@@ -317,22 +362,26 @@ function renderManage() {
   });
 }
 
-async function moveSound(index, direction) {
+function moveSound(soundId, direction) {
   const ordered = orderedSounds();
+  const ids = ordered.map((sound) => sound.id);
+  const index = ids.indexOf(soundId);
   const target = index + direction;
-  if (target < 0 || target >= ordered.length) return;
 
-  [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
+  if (index < 0 || target < 0 || target >= ids.length) return;
 
-  const stamp = Date.now();
-  for (let i = 0; i < ordered.length; i++) {
-    ordered[i].order = stamp + i;
-    await putSound(ordered[i]);
-  }
+  [ids[index], ids[target]] = [ids[target], ids[index]];
 
-  sounds = await getAllSounds();
+  /*
+    IMPORTANT:
+    Reordering writes ONLY this tiny ID array to localStorage.
+    It does not rewrite any audio Blob in IndexedDB.
+  */
+  writeOrderIds(ids);
+
   renderManage();
   renderDrive();
+  showToast(direction < 0 ? "Moved up." : "Moved down.");
 }
 
 /* =========================
@@ -797,6 +846,9 @@ async function saveEditor() {
   await putSound(record);
   sounds = await getAllSounds();
 
+  // New imports are appended to the lightweight order registry.
+  reconcileOrderIds();
+
   renderManage();
   renderDrive();
 
@@ -825,8 +877,12 @@ async function removeCurrentEditorSound() {
 
   if (currentPlayback?.id === editorState.id) stopCurrent();
 
-  await deleteSound(editorState.id);
+  const deletedId = editorState.id;
+  await deleteSound(deletedId);
   sounds = await getAllSounds();
+
+  writeOrderIds(readOrderIds().filter((id) => id !== deletedId));
+  reconcileOrderIds();
 
   renderManage();
   renderDrive();
@@ -1018,6 +1074,12 @@ document.addEventListener("visibilitychange", syncWakeLock);
 async function init() {
   db = await openDb();
   sounds = await getAllSounds();
+
+  /*
+    Build/reconcile a lightweight ID-only order registry.
+    This migrates the visible order without rewriting audio Blobs.
+  */
+  reconcileOrderIds();
 
   renderDrive();
   renderManage();
