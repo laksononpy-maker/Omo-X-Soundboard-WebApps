@@ -1,10 +1,13 @@
 {
   "name": "OMO X Soundboard",
   "short_name": "OMO Sounds",
+  "description": "Local-first customizable soundboard for OMO X.",
   "start_url": "./",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#111111",
-  "theme_color": "#111111",
+  "orientation": "portrait",
+  "background_color": "#0b0e0c",
+  "theme_color": "#0b0e0c",
   "icons": [
     {
       "src": "icon-192.png",
