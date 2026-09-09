@@ -1,4 +1,4 @@
-const CACHE = "omo-x-soundboard-v1-alpha2-shell-1";
+const CACHE = "omo-x-soundboard-v1-alpha3-shell-1";
 
 const SHELL = [
   "./",

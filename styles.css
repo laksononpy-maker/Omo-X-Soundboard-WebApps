@@ -212,28 +212,39 @@ button {
 }
 
 .page-nav {
+  position: relative;
+  z-index: 1;
   min-height: 0;
   display: grid;
-  grid-template-rows: 1fr 40px;
-  gap: 7px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: 57px 39px;
+  grid-template-areas:
+    "prev next"
+    "loop loop";
+  column-gap: 8px;
+  row-gap: 8px;
+  overflow: visible;
 }
 
-.page-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  min-height: 0;
+#prevPageBtn {
+  grid-area: prev;
 }
 
-.loop-row {
-  display: grid;
-  place-items: center;
-  min-height: 0;
+#nextPageBtn {
+  grid-area: next;
+}
+
+#driveLoopBtn {
+  grid-area: loop;
+  justify-self: center;
+  align-self: stretch;
 }
 
 .page-btn {
   width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: 20px;
   background: var(--panel-2);
@@ -252,12 +263,13 @@ button {
 }
 
 .drive-loop-btn {
-  width: min(26vw, 118px);
-  min-width: 86px;
-  height: 40px;
-  padding: 4px 12px;
+  width: min(30vw, 128px);
+  min-width: 92px;
+  height: 100%;
+  min-height: 0;
+  padding: 3px 12px;
   border: 1px solid var(--border);
-  border-radius: 15px;
+  border-radius: 14px;
   background: var(--panel-3);
   color: var(--text);
   display: flex;
@@ -340,6 +352,8 @@ button {
 
 .drive-footer {
   min-height: 0;
+  position: relative;
+  z-index: 2;
 }
 
 .stop-btn {
@@ -362,7 +376,14 @@ button {
 
   .drive-header { min-height: 52px; }
   .square-btn { width: 42px; height: 42px; flex-basis: 42px; }
-  .drive-loop-btn { width: min(28vw, 108px); min-width: 82px; height: 36px; border-radius: 14px; }
+  .page-nav {
+    grid-template-rows: 49px 35px;
+    row-gap: 8px;
+  }
+  .drive-loop-btn {
+    width: min(30vw, 116px);
+    min-width: 88px;
+  }
   .sound-grid { gap: 6px; }
   .sound-pad { border-radius: 18px; }
   .pad-meta { bottom: 6px; }

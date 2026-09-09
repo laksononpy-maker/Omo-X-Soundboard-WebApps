@@ -1,4 +1,4 @@
-# OMO X Soundboard — v1.0 alpha.2
+# OMO X Soundboard — v1.0 alpha.3
 
 A local-first PWA soundboard designed for portrait iPhone use.
 
@@ -80,3 +80,11 @@ Sounds imported on a Mac do not automatically sync to the iPhone.
 - LOOP is centered on its own second row underneath.
 - Prevents mobile wrapping into [PREV][LOOP] / [NEXT].
 - No IndexedDB schema changes; existing imported sounds should remain intact after updating at the same URL.
+
+## v1.0 alpha.3 iPhone navigation hotfix
+- Rebuilt the bottom navigation using explicit CSS Grid areas.
+- PREV and NEXT are hard-locked to row 1, 50/50.
+- LOOP is hard-locked to row 2 and centered.
+- Removed wrapper-based layout that could collapse/wrap incorrectly on iOS.
+- Added explicit min-width/min-height constraints and stacking separation from STOP ALL.
+- No IndexedDB schema change; existing local sounds remain intact at the same origin.

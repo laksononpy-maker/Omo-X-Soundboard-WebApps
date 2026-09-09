@@ -1,4 +1,4 @@
-const APP_VERSION = "1.0-alpha.2";
+const APP_VERSION = "1.0-alpha.3";
 const PAGE_SIZE = 6;
 
 const DB_NAME = "omo-x-soundboard";
