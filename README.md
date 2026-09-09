@@ -1,4 +1,4 @@
-# OMO X Soundboard — v1.0 alpha.7
+# OMO X Soundboard — v1.0 alpha.7.1
 
 A local-first PWA soundboard designed for portrait iPhone use.
 
@@ -140,3 +140,15 @@ or make previously valid audio suddenly report unreadable/unsupported until the 
 - Example: Campina +6 dB and global +3 dB => +9 dB total before the master limiter.
 - Per-sound gain is stored as metadata only; audio Blob is not rewritten.
 - Existing sounds default to 0 dB per-sound gain.
+
+
+## v1.0 alpha.7.1 — Drive layout + per-sound gain hotfix
+- Removed global boost from Drive Mode entirely.
+- Restored the known-good PREV/NEXT + centered LOOP + separate STOP ALL layout.
+- Per-sound gain is the only gain control and lives in Manage/Edit.
+- Fixed alpha.7 bug where initial Drive playback bypassed the per-sound GainNode.
+- Preview now uses the same Web Audio gain path, so gain changes are audible immediately while Preview is running.
+- Manage list shows saved per-sound gain values.
+- Drive tiles no longer show gain labels, keeping the riding UI clean.
+- Visible app version is now generated from APP_VERSION to make cache/update checks easier.
+- Existing sounds remain compatible; gain defaults to 0 dB when unset.

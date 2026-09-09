@@ -220,7 +220,7 @@ button {
   grid-template-rows: 57px 39px;
   grid-template-areas:
     "prev next"
-    "utility utility";
+    "loop loop";
   column-gap: 8px;
   row-gap: 8px;
   overflow: visible;
@@ -234,15 +234,11 @@ button {
   grid-area: next;
 }
 
-.utility-row {
-  grid-area: utility;
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
-  gap: 8px;
-  min-width: 0;
+#driveLoopBtn {
+  grid-area: loop;
+  justify-self: center;
+  align-self: stretch;
 }
-#driveLoopBtn { align-self: stretch; }
 
 .page-btn {
   width: 100%;
@@ -266,13 +262,12 @@ button {
   opacity: .24;
 }
 
-.drive-loop-btn,
-.boost-btn {
-  width: min(28vw, 118px);
+.drive-loop-btn {
+  width: min(30vw, 128px);
   min-width: 92px;
   height: 100%;
   min-height: 0;
-  padding: 3px 10px;
+  padding: 3px 12px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--panel-3);
@@ -280,7 +275,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 7px;
   font-weight: 900;
   box-shadow: 0 4px 10px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.06);
   transition: transform 70ms ease, filter 70ms ease, box-shadow 70ms ease, background 90ms ease;
@@ -301,8 +296,7 @@ button {
   letter-spacing: .06em;
 }
 
-.drive-loop-btn.on,
-.boost-btn.on {
+.drive-loop-btn.on {
   background: var(--accent);
   color: var(--accent-ink);
   border-color: transparent;
@@ -312,8 +306,7 @@ button {
   opacity: .24;
 }
 
-.drive-loop-btn:not(:disabled):active,
-.boost-btn:active {
+.drive-loop-btn:not(:disabled):active {
   transform: translateY(3px) scale(.92);
   filter: brightness(.72);
   box-shadow:
@@ -761,15 +754,31 @@ button {
 }
 
 
+.gain-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.gain-heading .field-label { margin: 0; }
+
+.gain-value {
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 950;
+  font-variant-numeric: tabular-nums;
+}
+
 .gain-row {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .gain-choice {
   min-width: 0;
-  height: 42px;
+  height: 46px;
   border-radius: 13px;
   border: 1px solid var(--border);
   background: var(--panel-2);
@@ -797,8 +806,3 @@ button {
   line-height: 1.35;
 }
 
-@media (max-width: 390px) {
-  .gain-row {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
