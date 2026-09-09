@@ -52,10 +52,15 @@
       <button id="prevPageBtn" class="page-btn" type="button">◀ PREV</button>
       <button id="nextPageBtn" class="page-btn" type="button">NEXT ▶</button>
 
-      <button id="driveLoopBtn" class="drive-loop-btn" type="button" disabled aria-pressed="false" title="Toggle loop for the currently playing sound">
-        <span class="drive-loop-icon">🔁</span>
-        <span id="driveLoopState" class="drive-loop-state">—</span>
-      </button>
+      <div class="utility-row">
+        <button id="driveLoopBtn" class="drive-loop-btn" type="button" disabled aria-pressed="false" title="Toggle loop for the currently playing sound">
+          <span class="drive-loop-icon">🔁</span>
+          <span id="driveLoopState" class="drive-loop-state">—</span>
+        </button>
+        <button id="boostBtn" class="boost-btn" type="button" title="Cycle global audio boost">
+          <span>🔊</span><span id="boostState">0 dB</span>
+        </button>
+      </div>
     </nav>
 
     <footer class="drive-footer">
@@ -131,6 +136,19 @@
       <div class="preview-row">
         <button id="previewBtn" class="secondary-btn" type="button">▶ PREVIEW</button>
         <button id="loopBtn" class="secondary-btn" type="button" aria-pressed="false">🔁 LOOP OFF</button>
+      </div>
+      <label class="field-label">PER-SOUND GAIN</label>
+      <div class="gain-row">
+        <button class="gain-choice" type="button" data-gain="-6">-6</button>
+        <button class="gain-choice" type="button" data-gain="-3">-3</button>
+        <button class="gain-choice selected" type="button" data-gain="0">0</button>
+        <button class="gain-choice" type="button" data-gain="3">+3</button>
+        <button class="gain-choice" type="button" data-gain="6">+6</button>
+        <button class="gain-choice" type="button" data-gain="9">+9</button>
+        <button class="gain-choice" type="button" data-gain="12">+12</button>
+      </div>
+      <div class="gain-note">
+        Effective gain = per-sound gain + global boost.
       </div>
 
       <div id="formatNote" class="format-note"></div>

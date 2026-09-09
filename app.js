@@ -1,4 +1,4 @@
-const APP_VERSION = "1.0-alpha.5";
+const APP_VERSION = "1.0-alpha.7";
 const PAGE_SIZE = 6;
 
 const DB_NAME = "omo-x-soundboard";
@@ -6,6 +6,8 @@ const DB_VERSION = 1;
 const STORE = "sounds";
 const ORDER_KEY = "omo-x-soundboard-order-v1";
 const META_KEY = "omo-x-soundboard-meta-v2";
+const BOOST_KEY = "omo-x-soundboard-boost-db-v1";
+const BOOST_STEPS = [0, 3, 6, 9, 12];
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -19,6 +21,8 @@ const prevPageBtn = $("#prevPageBtn");
 const nextPageBtn = $("#nextPageBtn");
 const driveLoopBtn = $("#driveLoopBtn");
 const driveLoopState = $("#driveLoopState");
+const boostBtn = $("#boostBtn");
+const boostState = $("#boostState");
 const stopAllBtn = $("#stopAllBtn");
 const manageBtn = $("#manageBtn");
 const backDriveBtn = $("#backDriveBtn");
@@ -47,6 +51,7 @@ const deleteBtn = $("#deleteBtn");
 const saveSoundBtn = $("#saveSoundBtn");
 const formatNote = $("#formatNote");
 const toastEl = $("#toast");
+const gainChoices = [...document.querySelectorAll(".gain-choice")];
 
 let db;
 let sounds = [];
@@ -58,6 +63,69 @@ let importIndex = 0;
 let editorState = null;
 let wakeLock = null;
 let wakeWanted = false;
+let audioContext = null;
+let masterGain = null;
+let limiter = null;
+let boostDb = Number(localStorage.getItem(BOOST_KEY) || 0);
+if (!BOOST_STEPS.includes(boostDb)) boostDb = 0;
+
+
+function dbToGain(db) { return Math.pow(10, db / 20); }
+
+async function ensureAudioEngine() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return false;
+  if (!audioContext) {
+    audioContext = new AC();
+    masterGain = audioContext.createGain();
+    limiter = audioContext.createDynamicsCompressor();
+    limiter.threshold.value = -2;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.002;
+    limiter.release.value = 0.08;
+    masterGain.connect(limiter);
+    limiter.connect(audioContext.destination);
+    applyBoost();
+  }
+  if (audioContext.state === "suspended") {
+    try { await audioContext.resume(); } catch {}
+  }
+  return audioContext.state === "running";
+}
+
+function combinedGainDb(sound) {
+  return (Number(sound?.soundGainDb) || 0) + boostDb;
+}
+
+function applyBoost() {
+  if (masterGain) {
+    masterGain.gain.value = dbToGain(boostDb);
+  }
+  if (boostState) boostState.textContent = `${boostDb > 0 ? "+" : ""}${boostDb} dB`;
+  if (boostBtn) boostBtn.classList.toggle("on", boostDb > 0);
+}
+
+function cycleBoost() {
+  const i = BOOST_STEPS.indexOf(boostDb);
+  boostDb = BOOST_STEPS[(i + 1) % BOOST_STEPS.length];
+  localStorage.setItem(BOOST_KEY, String(boostDb));
+  applyBoost();
+  showToast(boostDb ? `Boost +${boostDb} dB.` : "Boost off.");
+}
+
+async function decodeBlobFresh(blob) {
+  if (!(await ensureAudioEngine())) throw new Error("Web Audio unavailable");
+  const ab = await blob.arrayBuffer();
+  return await audioContext.decodeAudioData(ab.slice(0));
+}
+
+function stopBufferPlayback(pb) {
+  if (!pb?.source) return;
+  try { pb.source.onended = null; } catch {}
+  try { pb.source.stop(); } catch {}
+  try { pb.source.disconnect(); } catch {}
+}
 
 /* =========================
    IndexedDB
@@ -158,6 +226,7 @@ function metadataFromRecord(record) {
     trimStart: Number.isFinite(record.trimStart) ? record.trimStart : 0,
     trimEnd: Number.isFinite(record.trimEnd) ? record.trimEnd : (Number(record.duration) || 0),
     loop: !!record.loop,
+    soundGainDb: Number.isFinite(record.soundGainDb) ? record.soundGainDb : 0,
     createdAt: Number(record.createdAt) || Date.now()
   };
 }
@@ -389,11 +458,15 @@ function renderDrive() {
     const loop = document.createElement("span");
     loop.textContent = sound.loop ? "🔁" : "";
 
+    const gain = document.createElement("span");
+    const effectiveDb = combinedGainDb(sound);
+    gain.textContent = effectiveDb !== 0 ? `${effectiveDb > 0 ? "+" : ""}${effectiveDb}dB` : "";
+
     const state = document.createElement("span");
     state.className = "pad-state";
     state.textContent = currentPlayback?.id === sound.id ? "■ STOP" : "▶ PLAY";
 
-    meta.append(duration, loop, state);
+    meta.append(duration, loop, gain, state);
     btn.append(name, meta);
 
     btn.addEventListener("click", () => playSound(sound));
@@ -482,11 +555,12 @@ function moveSound(soundId, direction) {
 
 function stopCurrent() {
   if (!currentPlayback) return;
-
-  currentPlayback.cleanup?.();
-  disposeMedia(currentPlayback.media);
+  if (currentPlayback.engine === "buffer") stopBufferPlayback(currentPlayback);
+  else {
+    currentPlayback.cleanup?.();
+    disposeMedia(currentPlayback.media);
+  }
   currentPlayback = null;
-
   renderDrive();
 }
 
@@ -549,105 +623,117 @@ function setMediaSession(sound) {
 }
 
 async function playSound(sound) {
-  if (currentPlayback?.id === sound.id) {
-    stopCurrent();
-    return;
-  }
-
-  stopCurrent();
-  stopPreview();
+  if (currentPlayback?.id === sound.id) { stopCurrent(); return; }
+  stopCurrent(); stopPreview();
 
   let record;
-  try {
-    record = await getSoundRecord(sound.id);
-  } catch (error) {
-    console.error("Could not read sound record:", error);
-    showToast("Could not read this sound from local storage.");
-    return;
-  }
+  try { record = await getSoundRecord(sound.id); }
+  catch (e) { console.error(e); showToast("Could not read this sound."); return; }
 
   const blob = record?.blob;
-  if (!blob || typeof blob.size !== "number") {
-    showToast("Audio data is missing. Re-import this sound.");
-    return;
+  if (!blob || typeof blob.size !== "number") { showToast("Audio data is missing."); return; }
+
+  const start = Math.max(0, sound.trimStart ?? 0);
+  const end = Math.max(start + 0.01, sound.trimEnd ?? sound.duration);
+
+  try {
+    const buffer = await decodeBlobFresh(blob);
+    const source = audioContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(masterGain);
+    source.loop = !!sound.loop;
+    source.loopStart = Math.min(start, buffer.duration);
+    source.loopEnd = Math.min(end, buffer.duration);
+
+    currentPlayback = { id:sound.id, engine:"buffer", source, loop:!!sound.loop, buffer, start, end };
+
+    source.onended = () => {
+      if (!currentPlayback || currentPlayback.source !== source) return;
+      currentPlayback = null; renderDrive();
+    };
+
+    if (source.loop) source.start(0, source.loopStart);
+    else source.start(0, start, Math.max(0.01, Math.min(end, buffer.duration) - start));
+
+    setMediaSession(sound); renderDrive(); return;
+  } catch (e) {
+    console.warn("WebAudio fallback:", e);
   }
 
   const media = makeMedia(blob, sound.fileName);
-  const start = sound.trimStart ?? 0;
-  const end = sound.trimEnd ?? sound.duration;
-
-  currentPlayback = {
-    id: sound.id,
-    media,
-    cleanup: null,
-    loop: !!sound.loop
-  };
+  currentPlayback = { id:sound.id, engine:"media", media, cleanup:null, loop:!!sound.loop };
 
   const finish = () => {
     if (!currentPlayback || currentPlayback.media !== media) return;
+    currentPlayback.cleanup?.(); disposeMedia(media); currentPlayback=null; renderDrive();
+  };
 
-    currentPlayback.cleanup?.();
-    disposeMedia(media);
-    currentPlayback = null;
-    renderDrive();
+  const restart = async () => {
+    if (!currentPlayback?.loop || currentPlayback.media !== media) { finish(); return; }
+    try { media.currentTime = start; await media.play(); }
+    catch {
+      media.addEventListener("canplay", async () => {
+        if (!currentPlayback?.loop || currentPlayback.media !== media) return;
+        try { media.currentTime=start; await media.play(); } catch { finish(); }
+      }, {once:true});
+      media.load();
+    }
   };
 
   currentPlayback.cleanup = installTrimGuard(
-    media,
-    start,
-    end,
-    () => !!currentPlayback && currentPlayback.media === media && currentPlayback.loop,
-    finish
+    media, start, end,
+    () => !!currentPlayback && currentPlayback.media===media && currentPlayback.loop,
+    () => currentPlayback?.loop ? restart() : finish()
   );
+  media.addEventListener("ended", () => currentPlayback?.loop ? restart() : finish());
 
-  media.addEventListener("ended", () => {
-    const shouldLoopNow =
-      !!currentPlayback && currentPlayback.media === media && currentPlayback.loop;
-
-    if (shouldLoopNow) {
-      media.currentTime = start;
-      media.play().catch(finish);
-    } else {
-      finish();
-    }
-  });
-
-  media.addEventListener("error", () => {
-    console.error("Media element error:", media.error);
-    showToast("Playback failed. Local media could not be decoded.");
-    finish();
-  }, { once: true });
-
-  try {
-    media.currentTime = start;
-    await media.play();
-    setMediaSession(sound);
-    renderDrive();
-  } catch (error) {
-    console.error("Playback start failed:", error);
-    showToast("Could not start playback.");
-    finish();
-  }
+  try { media.currentTime=start; await media.play(); setMediaSession(sound); renderDrive(); }
+  catch { showToast("Could not start playback."); finish(); }
 }
 
 async function toggleDriveLoop() {
-  if (!currentPlayback) {
-    showToast("Play a sound first.");
-    return;
-  }
-
-  const sound = sounds.find((item) => item.id === currentPlayback.id);
+  if (!currentPlayback) { showToast("Play a sound first."); return; }
+  const sound = sounds.find(x => x.id === currentPlayback.id);
   if (!sound) return;
 
-  currentPlayback.loop = !currentPlayback.loop;
-  sound.loop = currentPlayback.loop;
+  const next = !currentPlayback.loop;
+  sound.loop = next;
+  replaceSoundMeta({...sound});
 
-  // Metadata-only write: never touches the audio Blob in IndexedDB.
-  replaceSoundMeta({ ...sound });
+  if (currentPlayback.engine === "buffer") {
+    const {id, buffer, start, end} = currentPlayback;
+    stopBufferPlayback(currentPlayback);
+    const source = audioContext.createBufferSource();
+    const soundGainNode = audioContext.createGain();
+    source.buffer = buffer;
+    soundGainNode.gain.value = dbToGain(Number(sound.soundGainDb) || 0);
+    source.connect(soundGainNode);
+    soundGainNode.connect(masterGain);
+    source.loop = next;
+    source.loopStart = Math.min(start, buffer.duration);
+    source.loopEnd = Math.min(end, buffer.duration);
+    currentPlayback = {id, engine:"buffer", source, loop:next, buffer, start, end};
+    source.onended = () => {
+      if (!currentPlayback || currentPlayback.source !== source) return;
+      currentPlayback=null; renderDrive();
+    };
+    if (next) source.start(0, start);
+    else source.start(0, start, Math.max(0.01, Math.min(end, buffer.duration)-start));
+  } else {
+    currentPlayback.loop = next;
+  }
 
-  renderDrive();
-  renderManage();
-  showToast(currentPlayback.loop ? "Loop ON." : "Loop OFF.");
+  renderDrive(); renderManage();
+  showToast(next ? "Loop ON." : "Loop OFF.");
+}
+
+
+function setSoundGainUi(db) {
+  if (!editorState) return;
+  editorState.soundGainDb = Number(db) || 0;
+  gainChoices.forEach((btn) => {
+    btn.classList.toggle("selected", Number(btn.dataset.gain) === editorState.soundGainDb);
+  });
 }
 
 /* =========================
@@ -801,6 +887,7 @@ async function prepareEditorFromFile(file, queueLabel) {
     mime: file.type || "",
     duration,
     loop: false,
+    soundGainDb: 0,
     waveBuffer: null
   };
 
@@ -818,6 +905,7 @@ async function prepareEditorFromFile(file, queueLabel) {
   trimEnd.value = duration;
 
   setLoopUi(false);
+  setSoundGainUi(0);
   deleteBtn.hidden = true;
 
   formatNote.textContent =
@@ -854,6 +942,7 @@ async function openExistingEditor(sound) {
     mime: sound.mime,
     duration: sound.duration,
     loop: !!sound.loop,
+    soundGainDb: Number(sound.soundGainDb) || 0,
     createdAt: sound.createdAt,
     waveBuffer: null
   };
@@ -871,6 +960,7 @@ async function openExistingEditor(sound) {
   trimEnd.value = sound.trimEnd ?? sound.duration;
 
   setLoopUi(!!sound.loop);
+  setSoundGainUi(Number(sound.soundGainDb) || 0);
   deleteBtn.hidden = false;
 
   formatNote.textContent =
@@ -961,6 +1051,7 @@ async function saveEditor() {
     trimStart: start,
     trimEnd: end,
     loop: !!editorState.loop,
+    soundGainDb: Number(editorState.soundGainDb) || 0,
     createdAt: editorState.createdAt ?? now
   };
 
@@ -1151,6 +1242,7 @@ nextPageBtn.addEventListener("click", () => {
 });
 
 driveLoopBtn.addEventListener("click", toggleDriveLoop);
+boostBtn.addEventListener("click", cycleBoost);
 
 stopAllBtn.addEventListener("click", () => {
   stopCurrent();
@@ -1178,6 +1270,13 @@ previewBtn.addEventListener("click", previewEditor);
 loopBtn.addEventListener("click", () => {
   if (!editorState) return;
   setLoopUi(!editorState.loop);
+});
+
+gainChoices.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    if (!editorState) return;
+    setSoundGainUi(Number(btn.dataset.gain));
+  });
 });
 
 saveSoundBtn.addEventListener("click", saveEditor);
@@ -1221,6 +1320,7 @@ async function init() {
   */
   sounds = await loadMetadataOnly();
   reconcileOrderIds();
+  applyBoost();
 
   renderDrive();
   renderManage();

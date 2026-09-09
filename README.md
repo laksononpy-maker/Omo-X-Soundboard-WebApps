@@ -1,4 +1,4 @@
-# OMO X Soundboard — v1.0 alpha.5
+# OMO X Soundboard — v1.0 alpha.7
 
 A local-first PWA soundboard designed for portrait iPhone use.
 
@@ -122,3 +122,21 @@ This release changes the internal architecture to avoid Safari/iOS IndexedDB Blo
 
 This specifically targets symptoms where reorder/edit operations could be delayed for 60–120 seconds
 or make previously valid audio suddenly report unreadable/unsupported until the PWA was restarted.
+
+## v1.0 alpha.6
+- Web Audio buffer playback is now preferred for decoded audio.
+- Native AudioBufferSourceNode loopStart/loopEnd gives true engine-level infinite looping for trimmed clips.
+- Media-element fallback remains for containers Web Audio cannot decode.
+- Added global source boost: 0 / +3 / +6 / +9 / +12 dB.
+- Boost uses GainNode plus a peak-catching compressor/limiter and persists locally.
+- Positive gain can increase loudness above the source's nominal level, but excessive boost can sound compressed/distorted.
+- Existing alpha.5 storage remains compatible.
+
+
+## v1.0 alpha.7 — per-sound gain
+- Added per-sound gain in Manage/Edit mode: -6, -3, 0, +3, +6, +9, +12 dB.
+- Global boost remains on the Drive page.
+- Both stack together: effective gain = per-sound gain + global boost.
+- Example: Campina +6 dB and global +3 dB => +9 dB total before the master limiter.
+- Per-sound gain is stored as metadata only; audio Blob is not rewritten.
+- Existing sounds default to 0 dB per-sound gain.
