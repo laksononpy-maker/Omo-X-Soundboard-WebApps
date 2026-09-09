@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111111" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+  <link rel="manifest" href="manifest.json" />
+
+  <title>OMO X Soundboard</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      padding-top: max(24px, env(safe-area-inset-top));
+      padding-bottom: max(24px, env(safe-area-inset-bottom));
+      background: #111;
+      color: white;
+      font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    }
+
+    h1 {
+      font-size: 32px;
+      margin-bottom: 8px;
+    }
+
+    p {
+      opacity: 0.65;
+      margin-top: 0;
+      margin-bottom: 28px;
+    }
+
+    button {
+      width: 100%;
+      padding: 22px;
+      margin-bottom: 14px;
+      border: 0;
+      border-radius: 18px;
+      font-size: 20px;
+      font-weight: 700;
+      background: white;
+      color: black;
+    }
+
+    .stop {
+      background: #ff453a;
+      color: white;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>🐭 OMO X Soundboard</h1>
+  <p>certified neighborhood menace</p>
+
+  <button onclick="playSound('campina.mp3')">
+    🍦 Campina
+  </button>
+
+  <button onclick="playSound('sound2.mp3')">
+    📢 Sound 2
+  </button>
+
+  <button onclick="playSound('sound3.mp3')">
+    🔊 Sound 3
+  </button>
+
+  <button class="stop" onclick="stopSound()">
+    ⏹ STOP
+  </button>
+
+  <script>
+    let audio = new Audio();
+
+    function playSound(file) {
+      audio.pause();
+      audio.src = file;
+      audio.currentTime = 0;
+      audio.play();
+    }
+
+    function stopSound() {
+      audio.pause();
+      audio.currentTime = 0;
+    }
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./service-worker.js');
+    }
+  </script>
+</body>
+</html>
