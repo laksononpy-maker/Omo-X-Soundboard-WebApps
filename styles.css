@@ -806,26 +806,3 @@ button {
   line-height: 1.35;
 }
 
-
-
-.loudness-row {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.loudness-choice {
-  min-height: 46px;
-  font-size: 11px;
-  letter-spacing: .02em;
-}
-
-.loudness-choice[data-loudness="jeger"].selected {
-  box-shadow:
-    0 0 0 2px rgba(255,255,255,.06),
-    0 0 18px rgba(156,255,112,.28);
-}
-
-@media (max-width: 390px) {
-  .loudness-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}

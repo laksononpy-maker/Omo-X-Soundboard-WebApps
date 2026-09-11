@@ -22,7 +22,7 @@
       <div class="title-wrap">
         <h1>🐭 OMO X Soundboard</h1>
         <div class="subtitle">
-          <span id="versionLabel">v1.0 alpha.7.2</span>
+          <span id="versionLabel">v1.0 alpha.7.1</span>
           <span>•</span>
           <span id="soundCount">0 sounds</span>
         </div>
@@ -132,17 +132,20 @@
         <button id="loopBtn" class="secondary-btn" type="button" aria-pressed="false">🔁 LOOP OFF</button>
       </div>
       <div class="gain-heading">
-        <label class="field-label">PER-SOUND LOUDNESS</label>
-        <strong id="soundLoudnessValue" class="gain-value">NORMAL</strong>
+        <label class="field-label">PER-SOUND GAIN</label>
+        <strong id="soundGainValue" class="gain-value">0 dB</strong>
       </div>
-      <div class="gain-row loudness-row">
-        <button class="gain-choice loudness-choice selected" type="button" data-loudness="normal">NORMAL</button>
-        <button class="gain-choice loudness-choice" type="button" data-loudness="boost">BOOST</button>
-        <button class="gain-choice loudness-choice" type="button" data-loudness="loud">LOUD</button>
-        <button class="gain-choice loudness-choice" type="button" data-loudness="jeger">JEGER</button>
+      <div class="gain-row">
+        <button class="gain-choice" type="button" data-gain="-6">-6</button>
+        <button class="gain-choice" type="button" data-gain="-3">-3</button>
+        <button class="gain-choice selected" type="button" data-gain="0">0</button>
+        <button class="gain-choice" type="button" data-gain="3">+3</button>
+        <button class="gain-choice" type="button" data-gain="6">+6</button>
+        <button class="gain-choice" type="button" data-gain="9">+9</button>
+        <button class="gain-choice" type="button" data-gain="12">+12</button>
       </div>
       <div class="gain-note">
-        Compressor + makeup gain. Saved per sound only. Preview updates immediately.
+        Saved for this sound only. Preview updates immediately. Positive gain may intentionally clip/distort at high levels.
       </div>
 
       <div id="formatNote" class="format-note"></div>

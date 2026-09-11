@@ -1,4 +1,4 @@
-# OMO X Soundboard — v1.0 alpha.7.2
+# OMO X Soundboard — v1.0 alpha.7.3
 
 A local-first PWA soundboard designed for portrait iPhone use.
 
@@ -154,14 +154,13 @@ or make previously valid audio suddenly report unreadable/unsupported until the 
 - Existing sounds remain compatible; gain defaults to 0 dB when unset.
 
 
-## v1.0 alpha.7.2 — per-sound loudness processing
-- Replaced raw per-sound dB gain buttons with 4 practical modes: NORMAL / BOOST / LOUD / JEGER.
-- Processing chain for Web Audio playback is now: source → per-sound compressor → makeup gain → master safety limiter → output.
-- BOOST: light compression + about +4 dB makeup.
-- LOUD: stronger compression + about +8 dB makeup.
-- JEGER: aggressive compression + about +12 dB makeup.
-- Preview updates live when changing loudness mode.
-- Existing alpha.7.1 per-sound dB values migrate non-destructively:
-  0 or below → NORMAL, +3 → BOOST, +6 → LOUD, +9/+12 → JEGER.
-- Loop engine remains the same native AudioBufferSourceNode loopStart/loopEnd implementation.
-- Audio Blobs are not rewritten.
+## v1.0 alpha.7.3 — plain gain rollback, no limiter
+
+- Rolled loudness processing back to the proven alpha.7.1 per-sound gain implementation.
+- Per-sound controls are again: -6 / -3 / 0 / +3 / +6 / +9 / +12 dB.
+- Removed the master DynamicsCompressorNode/limiter completely.
+- Web Audio path is now: source → per-sound GainNode → master GainNode → output.
+- Preview uses the same direct per-sound gain path and updates live.
+- Native AudioBufferSourceNode looping is unchanged.
+- Storage schema is unchanged; audio Blobs are not rewritten.
+- Warning: positive gain can hard-clip if the source already peaks near 0 dBFS. This is intentional in this build.
