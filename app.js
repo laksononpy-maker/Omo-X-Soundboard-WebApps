@@ -1,4 +1,4 @@
-const APP_VERSION = "1.0-alpha.7.1";
+const APP_VERSION = "1.0-alpha.7.2";
 const PAGE_SIZE = 6;
 
 const DB_NAME = "omo-x-soundboard";
@@ -48,8 +48,8 @@ const saveSoundBtn = $("#saveSoundBtn");
 const formatNote = $("#formatNote");
 const toastEl = $("#toast");
 const versionLabel = $("#versionLabel");
-const soundGainValue = $("#soundGainValue");
-const gainChoices = [...document.querySelectorAll(".gain-choice")];
+const soundLoudnessValue = $("#soundLoudnessValue");
+const loudnessChoices = [...document.querySelectorAll(".loudness-choice")];
 
 let db;
 let sounds = [];
@@ -68,6 +68,93 @@ let limiter = null;
 
 function dbToGain(db) {
   return Math.pow(10, db / 20);
+}
+
+const LOUDNESS_PRESETS = {
+  normal: {
+    label: "NORMAL",
+    threshold: -1,
+    knee: 0,
+    ratio: 1,
+    attack: 0.003,
+    release: 0.12,
+    makeupDb: 0
+  },
+  boost: {
+    label: "BOOST",
+    threshold: -18,
+    knee: 12,
+    ratio: 3,
+    attack: 0.004,
+    release: 0.14,
+    makeupDb: 4
+  },
+  loud: {
+    label: "LOUD",
+    threshold: -24,
+    knee: 10,
+    ratio: 5,
+    attack: 0.003,
+    release: 0.16,
+    makeupDb: 8
+  },
+  jeger: {
+    label: "JEGER",
+    threshold: -30,
+    knee: 6,
+    ratio: 10,
+    attack: 0.002,
+    release: 0.18,
+    makeupDb: 12
+  }
+};
+
+function normalizeLoudnessMode(mode, legacyGainDb = 0) {
+  if (mode && LOUDNESS_PRESETS[mode]) return mode;
+
+  // Non-destructive migration from alpha.7.1 dB presets.
+  const db = Number(legacyGainDb) || 0;
+  if (db >= 9) return "jeger";
+  if (db >= 6) return "loud";
+  if (db >= 3) return "boost";
+  return "normal";
+}
+
+function createLoudnessChain(mode) {
+  const selected = normalizeLoudnessMode(mode);
+  const preset = LOUDNESS_PRESETS[selected];
+
+  const compressor = audioContext.createDynamicsCompressor();
+  compressor.threshold.value = preset.threshold;
+  compressor.knee.value = preset.knee;
+  compressor.ratio.value = preset.ratio;
+  compressor.attack.value = preset.attack;
+  compressor.release.value = preset.release;
+
+  const makeupGain = audioContext.createGain();
+  makeupGain.gain.value = dbToGain(preset.makeupDb);
+
+  compressor.connect(makeupGain);
+  makeupGain.connect(masterGain);
+
+  return { mode: selected, compressor, makeupGain };
+}
+
+function updateLoudnessChain(chain, mode) {
+  if (!chain || !audioContext) return;
+  const selected = normalizeLoudnessMode(mode);
+  const preset = LOUDNESS_PRESETS[selected];
+  const now = audioContext.currentTime;
+
+  try {
+    chain.compressor.threshold.setTargetAtTime(preset.threshold, now, 0.015);
+    chain.compressor.knee.setTargetAtTime(preset.knee, now, 0.015);
+    chain.compressor.ratio.setTargetAtTime(preset.ratio, now, 0.015);
+    chain.compressor.attack.setTargetAtTime(preset.attack, now, 0.015);
+    chain.compressor.release.setTargetAtTime(preset.release, now, 0.015);
+    chain.makeupGain.gain.setTargetAtTime(dbToGain(preset.makeupDb), now, 0.015);
+    chain.mode = selected;
+  } catch {}
 }
 
 async function ensureAudioEngine() {
@@ -109,6 +196,8 @@ function stopBufferPlayback(pb) {
   try { pb.source.stop(); } catch {}
   try { pb.source.disconnect(); } catch {}
   try { pb.gainNode?.disconnect(); } catch {}
+  try { pb.compressor?.disconnect(); } catch {}
+  try { pb.makeupGain?.disconnect(); } catch {}
 }
 
 /* =========================
@@ -211,6 +300,7 @@ function metadataFromRecord(record) {
     trimEnd: Number.isFinite(record.trimEnd) ? record.trimEnd : (Number(record.duration) || 0),
     loop: !!record.loop,
     soundGainDb: Number.isFinite(record.soundGainDb) ? record.soundGainDb : 0,
+    soundLoudnessMode: normalizeLoudnessMode(record.soundLoudnessMode, record.soundGainDb),
     createdAt: Number(record.createdAt) || Date.now()
   };
 }
@@ -478,9 +568,11 @@ function renderManage() {
 
     const meta = document.createElement("div");
     meta.className = "manage-meta";
-    const gainDb = Number(sound.soundGainDb) || 0;
-    const gainLabel = gainDb ? ` • Gain ${gainDb > 0 ? "+" : ""}${gainDb} dB` : "";
-    meta.textContent = `Page ${page} • ${formatTime(clipDuration(sound))}${sound.loop ? " • Loop ON" : ""}${gainLabel}`;
+    const loudnessMode = normalizeLoudnessMode(sound.soundLoudnessMode, sound.soundGainDb);
+    const loudnessLabel = loudnessMode !== "normal"
+      ? ` • ${LOUDNESS_PRESETS[loudnessMode].label}`
+      : "";
+    meta.textContent = `Page ${page} • ${formatTime(clipDuration(sound))}${sound.loop ? " • Loop ON" : ""}${loudnessLabel}`;
 
     info.append(name, meta);
 
@@ -623,16 +715,28 @@ async function playSound(sound) {
   try {
     const buffer = await decodeBlobFresh(blob);
     const source = audioContext.createBufferSource();
-    const gainNode = audioContext.createGain();
     source.buffer = buffer;
-    gainNode.gain.value = dbToGain(Number(sound.soundGainDb) || 0);
-    source.connect(gainNode);
-    gainNode.connect(masterGain);
+
+    const loudnessMode = normalizeLoudnessMode(sound.soundLoudnessMode, sound.soundGainDb);
+    const loudnessChain = createLoudnessChain(loudnessMode);
+    source.connect(loudnessChain.compressor);
+
     source.loop = !!sound.loop;
     source.loopStart = Math.min(start, buffer.duration);
     source.loopEnd = Math.min(end, buffer.duration);
 
-    currentPlayback = { id:sound.id, engine:"buffer", source, gainNode, loop:!!sound.loop, buffer, start, end };
+    currentPlayback = {
+      id: sound.id,
+      engine: "buffer",
+      source,
+      compressor: loudnessChain.compressor,
+      makeupGain: loudnessChain.makeupGain,
+      loudnessMode,
+      loop: !!sound.loop,
+      buffer,
+      start,
+      end
+    };
 
     source.onended = () => {
       if (!currentPlayback || currentPlayback.source !== source) return;
@@ -691,15 +795,27 @@ async function toggleDriveLoop() {
     const {id, buffer, start, end} = currentPlayback;
     stopBufferPlayback(currentPlayback);
     const source = audioContext.createBufferSource();
-    const gainNode = audioContext.createGain();
     source.buffer = buffer;
-    gainNode.gain.value = dbToGain(Number(sound.soundGainDb) || 0);
-    source.connect(gainNode);
-    gainNode.connect(masterGain);
+
+    const loudnessMode = normalizeLoudnessMode(sound.soundLoudnessMode, sound.soundGainDb);
+    const loudnessChain = createLoudnessChain(loudnessMode);
+    source.connect(loudnessChain.compressor);
+
     source.loop = next;
     source.loopStart = Math.min(start, buffer.duration);
     source.loopEnd = Math.min(end, buffer.duration);
-    currentPlayback = {id, engine:"buffer", source, gainNode, loop:next, buffer, start, end};
+    currentPlayback = {
+      id,
+      engine: "buffer",
+      source,
+      compressor: loudnessChain.compressor,
+      makeupGain: loudnessChain.makeupGain,
+      loudnessMode,
+      loop: next,
+      buffer,
+      start,
+      end
+    };
     source.onended = () => {
       if (!currentPlayback || currentPlayback.source !== source) return;
       currentPlayback=null; renderDrive();
@@ -715,28 +831,25 @@ async function toggleDriveLoop() {
 }
 
 
-function setSoundGainUi(db) {
+function setSoundLoudnessUi(mode) {
   if (!editorState) return;
 
-  editorState.soundGainDb = Number(db) || 0;
-  const label = `${editorState.soundGainDb > 0 ? "+" : ""}${editorState.soundGainDb} dB`;
-  if (soundGainValue) soundGainValue.textContent = label;
+  const selected = normalizeLoudnessMode(mode, editorState.soundGainDb);
+  editorState.soundLoudnessMode = selected;
 
-  gainChoices.forEach((btn) => {
-    const selected = Number(btn.dataset.gain) === editorState.soundGainDb;
-    btn.classList.toggle("selected", selected);
-    btn.setAttribute("aria-pressed", String(selected));
+  if (soundLoudnessValue) {
+    soundLoudnessValue.textContent = LOUDNESS_PRESETS[selected].label;
+  }
+
+  loudnessChoices.forEach((btn) => {
+    const active = btn.dataset.loudness === selected;
+    btn.classList.toggle("selected", active);
+    btn.setAttribute("aria-pressed", String(active));
   });
 
-  // If preview is already running, gain changes are audible instantly.
-  if (previewPlayback?.gainNode && audioContext) {
-    try {
-      previewPlayback.gainNode.gain.setTargetAtTime(
-        dbToGain(editorState.soundGainDb),
-        audioContext.currentTime,
-        0.015
-      );
-    } catch {}
+  // Live preview update without restarting the clip.
+  if (previewPlayback?.compressor && previewPlayback?.makeupGain) {
+    updateLoudnessChain(previewPlayback, selected);
   }
 }
 
@@ -892,6 +1005,7 @@ async function prepareEditorFromFile(file, queueLabel) {
     duration,
     loop: false,
     soundGainDb: 0,
+    soundLoudnessMode: "normal",
     waveBuffer: null
   };
 
@@ -909,7 +1023,7 @@ async function prepareEditorFromFile(file, queueLabel) {
   trimEnd.value = duration;
 
   setLoopUi(false);
-  setSoundGainUi(0);
+  setSoundLoudnessUi("normal");
   deleteBtn.hidden = true;
 
   formatNote.textContent =
@@ -947,6 +1061,7 @@ async function openExistingEditor(sound) {
     duration: sound.duration,
     loop: !!sound.loop,
     soundGainDb: Number(sound.soundGainDb) || 0,
+    soundLoudnessMode: normalizeLoudnessMode(sound.soundLoudnessMode, sound.soundGainDb),
     createdAt: sound.createdAt,
     waveBuffer: null
   };
@@ -964,7 +1079,7 @@ async function openExistingEditor(sound) {
   trimEnd.value = sound.trimEnd ?? sound.duration;
 
   setLoopUi(!!sound.loop);
-  setSoundGainUi(Number(sound.soundGainDb) || 0);
+  setSoundLoudnessUi(normalizeLoudnessMode(sound.soundLoudnessMode, sound.soundGainDb));
   deleteBtn.hidden = false;
 
   formatNote.textContent =
@@ -988,19 +1103,18 @@ async function previewEditor() {
   const start = Number(trimStart.value);
   const end = Number(trimEnd.value);
   const duration = Math.max(0.01, end - start);
-  const gainDb = Number(editorState.soundGainDb) || 0;
+  const loudnessMode = normalizeLoudnessMode(editorState.soundLoudnessMode, editorState.soundGainDb);
 
-  // Preferred preview path: same Web Audio engine + same per-sound gain as Drive playback.
+  // Preferred preview path: same Web Audio compressor + makeup gain as Drive playback.
   try {
     const buffer = editorState.waveBuffer || await decodeBlobFresh(editorState.blob);
     await ensureAudioEngine();
 
     const source = audioContext.createBufferSource();
-    const gainNode = audioContext.createGain();
     source.buffer = buffer;
-    gainNode.gain.value = dbToGain(gainDb);
-    source.connect(gainNode);
-    gainNode.connect(masterGain);
+
+    const loudnessChain = createLoudnessChain(loudnessMode);
+    source.connect(loudnessChain.compressor);
 
     source.loop = !!editorState.loop;
     source.loopStart = Math.min(start, buffer.duration);
@@ -1009,7 +1123,9 @@ async function previewEditor() {
     previewPlayback = {
       engine: "buffer",
       source,
-      gainNode,
+      compressor: loudnessChain.compressor,
+      makeupGain: loudnessChain.makeupGain,
+      loudnessMode,
       buffer,
       loop: !!editorState.loop
     };
@@ -1054,7 +1170,9 @@ async function previewEditor() {
     media.currentTime = start;
     await media.play();
     previewBtn.textContent = "■ STOP PREVIEW";
-    if (gainDb !== 0) showToast("Gain preview unavailable for this fallback codec; saved gain still applies where Web Audio can decode it.");
+    if (loudnessMode !== "normal") {
+      showToast("Loudness processing is unavailable for this fallback codec.");
+    }
   } catch {
     showToast("Preview could not start.");
     finish();
@@ -1087,6 +1205,7 @@ async function saveEditor() {
     trimEnd: end,
     loop: !!editorState.loop,
     soundGainDb: Number(editorState.soundGainDb) || 0,
+    soundLoudnessMode: normalizeLoudnessMode(editorState.soundLoudnessMode, editorState.soundGainDb),
     createdAt: editorState.createdAt ?? now
   };
 
@@ -1306,10 +1425,10 @@ loopBtn.addEventListener("click", () => {
   setLoopUi(!editorState.loop);
 });
 
-gainChoices.forEach((btn) => {
+loudnessChoices.forEach((btn) => {
   btn.addEventListener("click", () => {
     if (!editorState) return;
-    setSoundGainUi(Number(btn.dataset.gain));
+    setSoundLoudnessUi(btn.dataset.loudness);
   });
 });
 
